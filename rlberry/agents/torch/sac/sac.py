@@ -84,7 +84,7 @@ class SACAgent(AgentWithSimplePolicy):
         batch_size=8,
         horizon=256,
         gamma=0.99,
-        entr_coef=0.01,
+        entr_coef=1,
         learning_rate=0.01,
         optimizer_type="ADAM",
         k_epochs=5,
@@ -311,8 +311,10 @@ class SACAgent(AgentWithSimplePolicy):
             action_dist = self.cat_policy(states_v)
             acts_v = action_dist.sample()
             acts_v_one_hot = one_hot(acts_v, self.env.action_space.n)
-            q_out_v = self.q1(torch.cat([states_v, acts_v_one_hot], dim=1))
-            act_loss = -q_out_v.mean()
+            q_out_v1 = self.q1(torch.cat([states_v, acts_v_one_hot], dim=1))
+            q_out_v2 = self.q2(torch.cat([states_v, acts_v_one_hot], dim=1))
+            q_out_v = torch.min(q_out_v1, q_out_v2).squeeze()
+            act_loss = action_dist.log_prob(acts_v)-q_out_v.mean()
             act_loss.backward()
             self.policy_optimizer.step()
             if self.writer is not None:

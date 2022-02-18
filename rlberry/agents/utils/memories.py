@@ -12,10 +12,11 @@ class ReplayMemory(object):
     Container that stores and samples transitions.
     """
 
-    def __init__(self, capacity=10000, **kwargs):
+    def __init__(self, rng, capacity=10000):
         self.capacity = int(capacity)
         self.memory = []
         self.position = 0
+        self.rng = rng
 
     def push(self, item):
         """Saves a thing."""
@@ -31,7 +32,7 @@ class ReplayMemory(object):
 
     def sample(self, batch_size):
         batch_size = min(batch_size, len(self))
-        idxes = np.random.choice(len(self.memory), size=batch_size)
+        idxes = self.rng.choice(len(self.memory), size=batch_size)
         return self._encode_sample(idxes), idxes
 
     def __len__(self):
