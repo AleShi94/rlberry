@@ -102,8 +102,8 @@ class PrioritizedReplayMemory(TransitionReplayMemory):
     def push(self, *args):
         idx = self.position
         super().push(*args)
-        self._it_sum[idx] = self._max_priority ** self._alpha
-        self._it_min[idx] = self._max_priority ** self._alpha
+        self._it_sum[idx] = self._max_priority**self._alpha
+        self._it_min[idx] = self._max_priority**self._alpha
 
     def _sample_proportional(self, batch_size):
         res = []
@@ -177,8 +177,8 @@ class PrioritizedReplayMemory(TransitionReplayMemory):
         for idx, priority in zip(idxes, priorities):
             assert priority > 0
             assert 0 <= idx < len(self.memory)
-            self._it_sum[idx] = priority ** self._alpha
-            self._it_min[idx] = priority ** self._alpha
+            self._it_sum[idx] = priority**self._alpha
+            self._it_min[idx] = priority**self._alpha
 
             self._max_priority = max(self._max_priority, priority)
 
