@@ -2,6 +2,7 @@ import concurrent.futures
 from copy import deepcopy
 from pathlib import Path
 
+import rlberry
 from rlberry.seeding import safe_reseed, set_external_seed
 from rlberry.seeding import Seeder
 from rlberry import metadata_utils
@@ -16,6 +17,7 @@ import pandas as pd
 import shutil
 import threading
 import multiprocessing
+from multiprocessing.spawn import _check_not_importing_main
 import numpy as np
 from rlberry.envs.utils import process_env
 from rlberry.utils.logging import configure_logging
@@ -117,6 +119,7 @@ class AgentHandler:
         """Saves agent to file and remove it from memory."""
         if self._agent_instance is not None:
             saved_filename = self._agent_instance.save(self._fname)
+
             # saved_filename might have appended the correct extension, for instance,
             # so self._fname must be updated.
             if not saved_filename:
@@ -124,7 +127,9 @@ class AgentHandler:
                     f"Instance of {self._agent_class} cannot be saved and will be kept in memory."
                 )
                 return
+
             self._fname = Path(saved_filename)
+
             del self._agent_instance
             self._agent_instance = None
 
@@ -377,6 +382,9 @@ class AgentManager:
         self.db_filename = None
         self.optuna_storage_url = None
 
+        # rlberry version for reproducibility purpose
+        self.rlberry_version = rlberry.__version__
+
     def _init_optuna_storage_url(self):
         self.output_dir_.mkdir(parents=True, exist_ok=True)
         self.db_filename = self.output_dir_ / "optuna_data.db"
@@ -545,6 +553,25 @@ class AgentManager:
         del kwargs
         budget = budget or self.fit_budget
 
+        # If spawn, test that protected by if __name__ == "__main__"
+        if self.mp_context == "spawn":
+            try:
+                _check_not_importing_main()
+            except RuntimeError as exc:
+                raise RuntimeError(
+                    """Warning: in AgentManager, if mp_context='spawn' and
+                        parallelization="process" then the script must be run
+                        outside a notebook and protected by a  if __name__ == '__main__':
+                        For example:
+                            if __name__ == '__main__':
+                                agent = AgentManager(UCBVIAgent,(Chain, {}),
+                                                mp_context="spawn",
+                                                parallelization="process")
+
+                                agent.fit(10)
+                                   """
+                ) from exc
+
         logger.info(
             f"Running AgentManager fit() for {self.agent_name}"
             f" with n_fit = {self.n_fit} and max_workers = {self.max_workers}."
@@ -709,7 +736,32 @@ class AgentManager:
 
         obj.__dict__.clear()
         obj.__dict__.update(tmp_dict)
+
         return obj
+
+    def __eq__(self, other):
+
+        result = True
+        self_init_kwargs = [_strip_seed_dir(kw) for kw in self.init_kwargs]
+        other_init_kwargs = [_strip_seed_dir(kw) for kw in other.init_kwargs]
+        result = result and all(
+            [
+                self_init_kwargs[f] == other_init_kwargs[f]
+                for f in range(len(self_init_kwargs))
+            ]
+        )
+
+        self_eval_kwargs = self.eval_kwargs or {}
+        other_eval_kwargs = other.eval_kwargs or {}
+        result = result and (self_eval_kwargs == other_eval_kwargs)
+
+        result = result and (other.agent_class == self.agent_class)
+
+        result = result and (self.fit_kwargs == other.fit_kwargs)
+
+        result = result and (self.fit_budget == other.fit_budget)
+
+        return result
 
     def optimize_hyperparams(
         self,
@@ -1089,3 +1141,11 @@ def _optuna_objective(
     del params_stats
 
     return eval_value
+
+
+def _strip_seed_dir(dico):
+    """Remove keys that should not be compared in __eq__"""
+    res = deepcopy(dico)
+    del res["seeder"]
+    del res["output_dir"]
+    return res
