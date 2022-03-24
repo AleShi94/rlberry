@@ -4,6 +4,9 @@ import gym.spaces as spaces
 import numpy as np
 
 
+from rlberry.agents.torch.utils.training import model_factory, activation_factory
+
+
 class ReplayBuffer:
     def __init__(self, capacity, rng):
         """
@@ -73,3 +76,104 @@ def alpha_sync(model, target_model, alpha):
     for k, v in state.items():
         tgt_state[k] = tgt_state[k] * alpha + (1 - alpha) * v
     return target_model.load_state_dict(tgt_state)
+
+
+
+##DEFAULT NN CONSTRUCTORS FOR SAC
+
+
+def default_twinq_net_fn(env):
+    """
+    Returns a default Twinq network
+    """
+    assert isinstance(env.action_space, spaces.Discrete)
+    if isinstance(env.observation_space, spaces.Box):
+        obs_shape = env.observation_space.shape
+    elif isinstance(env.observation_space, spaces.Tuple):
+        obs_shape = env.observation_space.spaces[0].shape
+    else:
+        raise ValueError(
+            "Incompatible observation space: {}".format(env.observation_space)
+        )
+    # Assume CHW observation space
+
+    if len(obs_shape) == 1:
+        model_config = {
+            "type": "MultiLayerPerceptron",
+            "in_size": int(obs_shape[0]) + int(env.action_space.n),
+            "layer_sizes": [256, 256],
+        }
+    else:
+        raise ValueError(
+            "Incompatible observation shape: {}".format(env.observation_space.shape)
+        )
+
+    model_config["out_size"] = 1
+
+    q1 = model_factory(**model_config)
+    q2 = model_factory(**model_config)
+
+    return (q1, q2)
+
+
+
+def default_policy_net_fn(env):
+    """
+    Returns a default value network.
+    """
+    if isinstance(env.observation_space, spaces.Box):
+        obs_shape = env.observation_space.shape
+    elif isinstance(env.observation_space, spaces.Tuple):
+        obs_shape = env.observation_space.spaces[0].shape
+    else:
+        raise ValueError(
+            "Incompatible observation space: {}".format(env.observation_space)
+        )
+
+    if len(obs_shape) == 1:
+        model_config = {
+            "type": "MultiLayerPerceptron",
+            "in_size": int(obs_shape[0]),
+            "layer_sizes": [256, 256],
+            "reshape": False,
+            "is_policy": True
+        }
+    else:
+        raise ValueError(
+            "Incompatible observation shape: {}".format(env.observation_space.shape)
+        )
+    if isinstance(env.action_space, spaces.Discrete):
+        model_config["out_size"] = env.action_space.n
+    elif isinstance(env.action_space, spaces.Tuple):
+        model_config["out_size"] = env.action_space.spaces[0].n
+
+    return model_factory(**model_config)
+
+
+def default_value_net_fn(env):
+    """
+    Returns a default value network.
+    """
+    if isinstance(env.observation_space, spaces.Box):
+        obs_shape = env.observation_space.shape
+    elif isinstance(env.observation_space, spaces.Tuple):
+        obs_shape = env.observation_space.spaces[0].shape
+    else:
+        raise ValueError(
+            "Incompatible observation space: {}".format(env.observation_space)
+        )
+
+    if len(obs_shape) == 1:
+        model_config = {
+            "type": "MultiLayerPerceptron",
+            "in_size": int(obs_shape[0]),
+            "layer_sizes": [256, 256],
+        }
+    else:
+        raise ValueError(
+            "Incompatible observation shape: {}".format(env.observation_space.shape)
+        )
+
+    model_config["out_size"] = 1
+
+    return model_factory(**model_config)

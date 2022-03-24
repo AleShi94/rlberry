@@ -1,4 +1,9 @@
 from .utils import ReplayBuffer, get_qref, get_vref, alpha_sync
+from .utils import default_policy_net_fn, default_value_net_fn, default_twinq_net_fn
+
+
+
+
 
 import torch
 import torch.nn as nn
@@ -8,13 +13,19 @@ import gym.spaces as spaces
 
 from rlberry.agents import AgentWithSimplePolicy
 from rlberry.agents.torch.utils.training import optimizer_factory
-from rlberry.agents.torch.utils.models import default_policy_net_fn
-from rlberry.agents.torch.utils.models import default_value_net_fn
-from rlberry.agents.torch.utils.models import default_twinq_net_fn
+# from rlberry.agents.torch.sac.utilsutils.models import default_policy_net_fn
+# from rlberry.agents.torch.utils.models import default_value_net_fn
+# from rlberry.agents.torch.utils.models import default_twinq_net_fn
+
+
 from rlberry.utils.torch import choose_device
 from rlberry.wrappers.uncertainty_estimator_wrapper import UncertaintyEstimatorWrapper
 
 logger = logging.getLogger(__name__)
+
+
+
+
 
 
 class SACAgent(AgentWithSimplePolicy):
