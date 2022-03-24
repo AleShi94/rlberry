@@ -2,9 +2,6 @@ from .utils import ReplayBuffer, get_qref, get_vref, alpha_sync
 from .utils import default_policy_net_fn, default_value_net_fn, default_twinq_net_fn
 
 
-
-
-
 import torch
 import torch.nn as nn
 from torch.nn.functional import one_hot
@@ -13,6 +10,7 @@ import gym.spaces as spaces
 
 from rlberry.agents import AgentWithSimplePolicy
 from rlberry.agents.torch.utils.training import optimizer_factory
+
 # from rlberry.agents.torch.sac.utilsutils.models import default_policy_net_fn
 # from rlberry.agents.torch.utils.models import default_value_net_fn
 # from rlberry.agents.torch.utils.models import default_twinq_net_fn
@@ -22,10 +20,6 @@ from rlberry.utils.torch import choose_device
 from rlberry.wrappers.uncertainty_estimator_wrapper import UncertaintyEstimatorWrapper
 
 logger = logging.getLogger(__name__)
-
-
-
-
 
 
 class SACAgent(AgentWithSimplePolicy):
@@ -51,7 +45,7 @@ class SACAgent(AgentWithSimplePolicy):
         Learning rate.
     optimizer_type: str
         Type of optimizer. 'ADAM' by defaut.
-    k_epochs : int
+    num_grad_steps : int
         Number of epochs per update.
     policy_net_fn : function(env, **kwargs)
         Function that returns an instance of a policy network (pytorch).
@@ -87,14 +81,17 @@ class SACAgent(AgentWithSimplePolicy):
     def __init__(
         self,
         env,
-        batch_size=8,
+        batch_size=256,
         gamma=0.99,
-        entr_coef=0.01,
-        learning_rate=0.01,
-        buffer_capacity: int = 30000,
-        horizon=500,
+        entr_coef=1,
+        learning_rate=3e-4,
+        buffer_capacity=int(1e6),
+        init_size_rb=int(1e3),
+        horizon=int(1e3),
+        smooth_coef=5e-3,
         optimizer_type="ADAM",
-        k_epochs=5,
+        num_grad_steps=1,
+        num_env_steps=None,
         policy_net_fn=None,
         value_net_fn=None,
         twinq_net_fn=None,
@@ -115,14 +112,19 @@ class SACAgent(AgentWithSimplePolicy):
                 self.env, **uncertainty_estimator_kwargs
             )
 
+        self.step = 0
+
         self.batch_size = batch_size
         self.gamma = gamma
         self.entr_coef = entr_coef
         self.learning_rate = learning_rate
         self.buffer_capacity = buffer_capacity
-        self.k_epochs = k_epochs
+        self.num_grad_steps = num_grad_steps
         self.device = choose_device(device)
         self.horizon = horizon
+        self.num_env_steps = num_env_steps or 1
+        self.smooth_coef = smooth_coef
+        self.init_size_rb = init_size_rb
 
         self.policy_net_kwargs = policy_net_kwargs or {}
         self.value_net_kwargs = value_net_kwargs or {}
@@ -253,9 +255,10 @@ class SACAgent(AgentWithSimplePolicy):
         # interact for H steps
         episode_rewards = 0
         state = self.env.reset()
-        #done = False
+        # done = False
 
         for i in range(self.horizon):
+            self.step += 1
             # running policy_old
             action, action_logprob = self._select_action(state)
             next_state, reward, done, info = self.env.step(action)
@@ -280,11 +283,9 @@ class SACAgent(AgentWithSimplePolicy):
             # update state
             state = next_state
 
-        # update; TODO this condition "self.episode % self.batch_size == 0:" seems to be  completely random to me
-        # implement self.episode -> self.steps
-        self.episode += 1
-        if self.episode % self.batch_size == 0:
-            self._update()
+        if self.step % self.num_env_steps == 0:
+            if self.step > self.init_size_rb:
+                self._update()
 
         # add rewards to writer
         if self.writer is not None:
@@ -293,8 +294,8 @@ class SACAgent(AgentWithSimplePolicy):
         return episode_rewards
 
     def _update(self):
-        # optimize for K epochs
-        for _ in range(self.k_epochs):
+        # optimize for num_grad_steps
+        for _ in range(self.num_grad_steps):
             # sample batch
             batch = self._get_batch(self.device)
             states, _, actions, _, _, _ = batch
@@ -362,7 +363,7 @@ class SACAgent(AgentWithSimplePolicy):
         self.cat_policy_old.load_state_dict(self.cat_policy.state_dict())
 
         # update target_value_net
-        alpha_sync(self.value_net, self.target_value_net, 1 - 1e-3)
+        alpha_sync(self.value_net, self.target_value_net, self.smooth_coef)
 
     #
     # For hyperparameter optimization
@@ -373,12 +374,12 @@ class SACAgent(AgentWithSimplePolicy):
         gamma = trial.suggest_categorical("gamma", [0.9, 0.95, 0.99])
         learning_rate = trial.suggest_loguniform("learning_rate", 1e-5, 1)
         entr_coef = trial.suggest_loguniform("entr_coef", 1e-8, 0.1)
-        k_epochs = trial.suggest_categorical("k_epochs", [1, 5, 10, 20])
+        num_grad_steps = trial.suggest_categorical("num_grad_steps", [1, 5, 10, 20])
 
         return {
             "batch_size": batch_size,
             "gamma": gamma,
             "learning_rate": learning_rate,
             "entr_coef": entr_coef,
-            "k_epochs": k_epochs,
+            "num_grad_steps": num_grad_steps,
         }
