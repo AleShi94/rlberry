@@ -112,7 +112,6 @@ class SACAgent(AgentWithSimplePolicy):
                 self.env, **uncertainty_estimator_kwargs
             )
 
-        self.step = 0
 
         self.batch_size = batch_size
         self.gamma = gamma
@@ -193,8 +192,14 @@ class SACAgent(AgentWithSimplePolicy):
         # loss function
         self.MseLoss = nn.MSELoss()
 
-        # initialize episode counter
+        # initialize episode counter and step
         self.episode = 0
+        self.step_in_episode = 0
+        self.step = 0
+        self.episode_reward = 0
+
+        #initialize environment
+        self.cur_state = self.env.reset()
 
     def policy(self, observation):
         state = observation
@@ -209,7 +214,8 @@ class SACAgent(AgentWithSimplePolicy):
         n_episodes_to_run = budget
         count = 0
         while count < n_episodes_to_run:
-            self._run_episode()
+            # self._run_episode()
+            self._run_step()
             count += 1
 
     def _get_batch(self, device="cpu"):
@@ -250,6 +256,43 @@ class SACAgent(AgentWithSimplePolicy):
         action_logprob = action_dist.log_prob(action)
 
         return action.item(), action_logprob.item()
+
+    def _run_step(self):
+        # interact for H steps
+
+        self.step += 1
+        self.step_in_episode += 1
+        action, action_logprob = self._select_action(self.cur_state)
+        next_state, reward, done, info = self.env.step(action)
+        self.episode_reward += reward
+
+        bonus = 0.0
+        if self.use_bonus:
+            if info is not None and "exploration_bonus" in info:
+                bonus = info["exploration_bonus"]
+
+        self.replay_buffer.push(
+                (self.cur_state, next_state, action, action_logprob, reward + bonus, done)
+            )
+
+
+        if self.step_in_episode == self.horizon - 1 or done:
+            # add rewards to writer
+            if self.writer is not None:
+                self.writer.add_scalar("episode_rewards", self.episode_reward, self.episode)
+
+            self.cur_state = self.env.reset()
+            self.step_in_episode = 0
+            self.episode_reward = 0
+            self.episode += 1
+        else:
+            self.cur_state = next_state
+            
+
+        if self.step % self.num_env_steps == 0:
+            if self.step > self.init_size_rb:
+                self._update()
+
 
     def _run_episode(self):
         # interact for H steps
