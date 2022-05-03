@@ -370,7 +370,7 @@ class SACAgent(AgentWithSimplePolicy):
             v_loss_v.backward()
             self.value_optimizer.step()
             if self.writer is not None:
-                self.writer.add_scalar("loss_v", float(v_loss_v.detach()), self.episode)
+                self.writer.add_scalar("loss_v", float(v_loss_v.detach()), self.step)
 
             # TwinQ
             self.q1_optimizer.zero_grad()
@@ -387,10 +387,10 @@ class SACAgent(AgentWithSimplePolicy):
             self.q2_optimizer.step()
             if self.writer is not None:
                 self.writer.add_scalar(
-                    "loss_q1", float(q1_loss_v.detach()), self.episode
+                    "loss_q1", float(q1_loss_v.detach()), self.step
                 )
                 self.writer.add_scalar(
-                    "loss_q2", float(q2_loss_v.detach()), self.episode
+                    "loss_q2", float(q2_loss_v.detach()), self.step
                 )
 
             # Actor
@@ -408,7 +408,7 @@ class SACAgent(AgentWithSimplePolicy):
             self.policy_optimizer.step()
             if self.writer is not None:
                 self.writer.add_scalar(
-                    "loss_act", float(act_loss.detach()), self.episode
+                    "loss_act", float(act_loss.detach()), self.step
                 )
 
         # copy new weights into old policy
